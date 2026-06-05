@@ -1,0 +1,5 @@
+{
+  "title": "Configuration",
+  "description": "How to configure the domain and SSL certificate for the ROADFX system.",
+  "pages": ["env-vars", "domain-ssl"]
+}

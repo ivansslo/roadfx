@@ -1,0 +1,152 @@
+---
+title: Source Deployment
+description: How to build and deploy ROADFX from source code, suitable for custom modifications or development debugging scenarios.
+---
+
+## Differences from Image Deployment
+
+| Deployment Method | Description | Applicable Scenarios |
+|-------------------|-------------|----------------------|
+| **Image Deployment** (default) | Uses pre-built Docker images | Production, quick deployment |
+| **Source Deployment** | Builds Docker images from local source code | Development, custom modifications |
+
+## Source Deployment Steps
+
+### 1. Clone Repository
+
+```bash
+git clone https://github.com/ivansslo/roadfx.git
+cd roadfx
+```
+
+For users in China:
+
+```bash
+git clone https://gitee.com/ivansslo/roadfx.git
+cd roadfx
+```
+
+### 2. Execute Source Installation
+
+To deploy ROADFX from source code, use the `--source` parameter:
+
+```bash
+./roadfx.sh install --source
+```
+
+## Source Directory Structure
+
+```
+roadfx/
+└── repos/
+    ├── roadfx-api/        # Backend API service
+    ├── roadfx-ai/         # AI inference service
+    ├── roadfx-rag/        # RAG service
+    ├── roadfx-platform/   # Platform management service
+    ├── roadfx-web/        # Web console
+    └── roadfx-widget/     # Widget component
+```
+
+## Build Specific Services
+
+If you only modified a single service, you can rebuild it individually:
+
+```bash
+# Build specific services
+./roadfx.sh build api      # Build roadfx-api
+./roadfx.sh build ai       # Build roadfx-ai
+./roadfx.sh build rag      # Build roadfx-rag
+./roadfx.sh build platform # Build roadfx-platform
+./roadfx.sh build web      # Build roadfx-web
+./roadfx.sh build widget   # Build roadfx-widget
+
+# Build all services
+./roadfx.sh build all
+```
+
+After building, restart the services:
+
+```bash
+./roadfx.sh down
+./roadfx.sh up --source
+```
+
+## Development Workflow
+
+### Modify Code
+
+1. Navigate to the service directory:
+   ```bash
+   cd repos/roadfx-api
+   ```
+
+2. Modify the code
+
+3. Rebuild and restart:
+   ```bash
+   cd ../..
+   ./roadfx.sh build api
+   ./roadfx.sh down
+   ./roadfx.sh up --source
+   ```
+
+### View Logs
+
+```bash
+# View all logs
+docker compose logs -f
+
+# View specific service logs
+docker compose logs -f roadfx-api
+```
+
+### Debugging with Container Shell
+
+```bash
+docker compose exec roadfx-api bash
+```
+
+## Installation Mode Rememberance
+
+ROADFX will remember your installation mode and save it in the `./data/.roadfx-install-mode` file.
+
+After the initial installation, subsequent `upgrade` commands will automatically use the same mode:
+
+```bash
+# First-time installation using source code
+./roadfx.sh install --source
+
+# Subsequent upgrades will use --source by default
+./roadfx.sh upgrade
+```
+
+### Temporary Mode Switching
+
+If you need to switch modes temporarily, you can explicitly specify the parameter:
+
+```bash
+./roadfx.sh upgrade --source  # Force use source mode
+```
+
+## Switching to Image Deployment
+
+If you want to switch back to image deployment:
+
+```bash
+./roadfx.sh down
+./roadfx.sh up  # No need to specify --source
+```
+
+## Considerations
+
+1. **First Build Time**: Source build requires downloading dependencies and compiling, which may take 10-30 minutes on the first build.
+
+2. **Disk Space**: Source deployment requires more disk space to store source code and build caches.
+
+3. **Network Requirements**: Build process requires downloading dependency packages, ensure network connectivity.
+
+4. **Branch Synchronization**: If you updated the main repository, remember to synchronize submodules:
+   ```bash
+   git pull
+   git submodule update --recursive
+   ```

@@ -1,0 +1,500 @@
+name: roadfx-dev
+
+x-backend-env: &backend-env
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  DEBUG: ${DEBUG:-true}
+  WATCHFILES_FORCE_POLLING: "true"
+  POSTGRES_HOST: postgres
+  REDIS_HOST: redis
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-roadfx}:${POSTGRES_PASSWORD:-roadfx}@postgres:5432/${POSTGRES_DB:-roadfx}
+
+x-backend-dev: &backend-dev
+  env_file:
+    - .env.dev
+  working_dir: /workspace
+  restart: unless-stopped
+
+services:
+  postgres:
+    env_file:
+      - .env.dev
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  redis:
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  wukongim:
+    env_file:
+      - .env.dev
+    environment:
+      WK_EXTERNAL_WSADDR: ${WK_EXTERNAL_WSADDR:-ws://127.0.0.1:5200}
+      WK_WEBHOOK_HTTPADDR: http://roadfx-api:8000/v1/integrations/wukongim/webhook
+    ports:
+      - "5001:5001"
+
+  roadfx-rag:
+    <<: *backend-dev
+    environment:
+      <<: *backend-env
+      REDIS_URL: redis://redis:6379/2
+    volumes:
+      - ./repos/roadfx-rag:/workspace
+      - ./data/roadfx-rag/uploads:/workspace/uploads
+    ports:
+      - "${ROADFXRAG_PORT:-18082}:8082"
+    command:
+      - /app/.venv/bin/uvicorn
+      - src.rag_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8082"
+      - --reload
+
+  roadfx-rag-worker:
+    <<: *backend-dev
+    environment:
+      <<: *backend-env
+      REDIS_URL: redis://redis:6379/2
+    volumes:
+      - ./repos/roadfx-rag:/workspace
+      - ./data/roadfx-rag/uploads:/workspace/uploads
+    command:
+      - /bin/sh
+      - -lc
+      - /app/.venv/bin/celery -A src.rag_service.tasks.celery_app worker --loglevel=info --hostname=worker@roadfx-rag-worker -Q document_processing,embedding,website_crawling,qa_processing,celery
+
+  roadfx-rag-beat:
+    <<: *backend-dev
+    environment:
+      <<: *backend-env
+      REDIS_URL: redis://redis:6379/2
+    volumes:
+      - ./repos/roadfx-rag:/workspace
+      - ./data/roadfx-rag/uploads:/workspace/uploads
+    command:
+      - /bin/sh
+      - -lc
+      - /app/.venv/bin/celery -A src.rag_service.tasks.celery_app beat --loglevel=info
+
+  roadfx-ai:
+    <<: *backend-dev
+    environment:
+      <<: *backend-env
+      REDIS_URL: redis://redis:6379/1
+      API_SERVICE_URL: http://roadfx-api:8000
+      API_INTERNAL_SERVICE_URL: http://roadfx-api:8001
+      RAG_SERVICE_URL: http://roadfx-rag:8082
+      WORKFLOW_SERVICE_URL: http://roadfx-workflow:8000
+      PLUGIN_RUNTIME_URL: http://roadfx-plugin-runtime:8090
+      DEVICE_CONTROL_SERVICE_URL: http://roadfx-device-control:8085
+    volumes:
+      - ./repos/roadfx-ai:/workspace
+      - ./data/skills:/data/skills
+    ports:
+      - "${ROADFXAI_PORT:-8081}:8081"
+    command:
+      - /app/.venv/bin/uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8081"
+      - --reload
+
+  roadfx-plugin-runtime:
+    <<: *backend-dev
+    environment:
+      <<: *backend-env
+      AI_SERVICE_URL: http://roadfx-ai:8081
+    volumes:
+      - ./repos/roadfx-plugin-runtime:/workspace
+      - ./data/plugins:/var/lib/roadfx/plugins
+      - plugin-socket:/var/run/roadfx
+    ports:
+      - "${ROADFXPLUGIN_RUNTIME_PORT:-8090}:8090"
+      - "8005:8005"
+    command:
+      - /app/.venv/bin/uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8090"
+      - --reload
+
+  roadfx-device-control:
+    <<: *backend-dev
+    environment:
+      <<: *backend-env
+      REDIS_URL: redis://redis:6379/3
+      AI_SERVICE_URL: http://roadfx-ai:8081
+      API_SERVICE_URL: http://roadfx-api:8000
+    volumes:
+      - ./repos/roadfx-device-control:/workspace
+      - ./data/roadfx-device-control/screenshots:/var/lib/roadfx/device-control/screenshots
+    ports:
+      - "${ROADFXDEVICE_CONTROL_PORT:-8085}:8085"
+    command:
+      - /app/.venv/bin/uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8085"
+      - --reload
+
+  roadfx-platform:
+    <<: *backend-dev
+    environment:
+      <<: *backend-env
+      REDIS_URL: redis://redis:6379/0
+      API_BASE_URL: http://roadfx-api:8000
+    volumes:
+      - ./repos/roadfx-platform:/workspace
+    ports:
+      - "${ROADFXPLATFORM_PORT:-8003}:8003"
+    command:
+      - /app/.venv/bin/uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8003"
+      - --reload
+
+  roadfx-workflow:
+    <<: *backend-dev
+    environment:
+      <<: *backend-env
+      REDIS_URL: redis://redis:6379/2
+      AI_SERVICE_URL: http://roadfx-ai:8081
+      ALLOWED_ORIGINS: '["*"]'
+    volumes:
+      - ./repos/roadfx-workflow:/workspace
+    ports:
+      - "${ROADFXWORKFLOW_PORT:-8004}:8000"
+    command:
+      - /app/.venv/bin/uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+
+  roadfx-workflow-worker:
+    <<: *backend-dev
+    environment:
+      <<: *backend-env
+      REDIS_URL: redis://redis:6379/2
+      AI_SERVICE_URL: http://roadfx-ai:8081
+      ALLOWED_ORIGINS: '["*"]'
+    volumes:
+      - ./repos/roadfx-workflow:/workspace
+    command:
+      - /bin/sh
+      - -lc
+      - /app/.venv/bin/celery -A celery_app.celery worker --loglevel=info -Q workflow
+
+  roadfx-api:
+    <<: *backend-dev
+    environment:
+      <<: *backend-env
+      REDIS_URL: redis://redis:6379/0
+      INTERNAL_SERVICE_HOST: 0.0.0.0
+      PLATFORM_SERVICE_URL: http://roadfx-platform:8003
+      AI_SERVICE_URL: http://roadfx-ai:8081
+      RAG_SERVICE_URL: http://roadfx-rag:8082
+      PLUGIN_RUNTIME_URL: http://roadfx-plugin-runtime:8090
+      DEVICE_CONTROL_SERVICE_URL: http://roadfx-device-control:8085
+      WORKFLOW_SERVICE_URL: http://roadfx-workflow:8000
+      WUKONGIM_SERVICE_URL: http://wukongim:5001
+      WUKONGIM_ENABLED: "true"
+    volumes:
+      - ./repos/roadfx-api:/workspace
+      - ./data/roadfx-api/uploads:/workspace/uploads
+    ports:
+      - "${ROADFXAPI_PORT:-8000}:8000"
+    command:
+      - /bin/sh
+      - -lc
+      - >
+        /app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
+        /app/.venv/bin/uvicorn app.internal:internal_app --host 0.0.0.0 --port 8001 --reload &
+        wait
+
+  roadfx-web:
+    image: node:20-bookworm-slim
+    working_dir: /workspace
+    env_file:
+      - .env.dev
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+      VITE_WIDGET_PREVIEW_URL: ${VITE_WIDGET_PREVIEW_URL:-http://localhost:5174}
+      VITE_WIDGET_SCRIPT_BASE: ${VITE_WIDGET_SCRIPT_BASE:-http://localhost:5174/roadfx-widget-sdk.js}
+      VITE_WIDGET_DEMO_URL: ${VITE_WIDGET_DEMO_URL:-http://localhost:5174/demo.html}
+      VITE_DEBUG_MODE: ${VITE_DEBUG_MODE:-true}
+    volumes:
+      - ./repos/roadfx-web:/workspace
+      - roadfx-web-node-modules:/workspace/node_modules
+    ports:
+      - "${ROADFXWEB_PORT:-5173}:5173"
+    command:
+      - sh
+      - -lc
+      - |
+        if ! command -v yarn >/dev/null 2>&1; then
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+        fi
+        if [ ! -d node_modules/vite ]; then
+          yarn install --frozen-lockfile --non-interactive --network-timeout 600000
+        fi
+        yarn dev --host 0.0.0.0 --port 5173
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5173/').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  roadfx-widget-js:
+    image: node:20-bookworm-slim
+    working_dir: /workspace
+    env_file:
+      - .env.dev
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    volumes:
+      - ./repos/roadfx-widget-js:/workspace
+      - roadfx-widget-node-modules:/workspace/node_modules
+    ports:
+      - "${ROADFXWIDGET_PORT:-5174}:5174"
+    command:
+      - sh
+      - -lc
+      - |
+        if ! command -v yarn >/dev/null 2>&1; then
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+        fi
+        if [ ! -d node_modules/vite ]; then
+          yarn install --frozen-lockfile --non-interactive --network-timeout 600000
+        fi
+        yarn dev --host 0.0.0.0 --port 5174
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5174/').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  roadfx-celery-flower:
+    env_file:
+      - .env.dev
+    ports:
+      - "5555:5555"
+    profiles:
+      - monitoring
+
+  adminer:
+    image: adminer:latest
+    container_name: roadfx-dev-adminer
+    ports:
+      - "8089:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+  roadfx-device-control-agentos:
+    build:
+      context: ./repos/roadfx-device-control
+      dockerfile: Dockerfile.agentos
+    container_name: roadfx-dev-device-control-agentos
+    env_file:
+      - .env.dev
+    environment:
+      AGENTOS_ENABLED: "true"
+      AGENTOS_PORT: 7778
+      AGENTOS_HOST: 0.0.0.0
+      PLANNING_MODEL: gpt-4o
+      GROUNDING_MODEL: openai
+      MAX_AGENT_ROUNDS: 20
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-roadfx}:${POSTGRES_PASSWORD:-roadfx}@postgres:5432/${POSTGRES_DB:-roadfx}
+      REDIS_URL: redis://redis:6379/0
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "7778:7778"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles:
+      - agentos
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:7778/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  migrate-api:
+    image: ghcr.io/ivansslo/roadfx/roadfx-api:latest
+    env_file:
+      - .env.dev
+    environment:
+      <<: *backend-env
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-roadfx}:${POSTGRES_PASSWORD:-roadfx}@postgres:5432/${POSTGRES_DB:-roadfx}
+      REDIS_URL: redis://redis:6379/0
+      PLATFORM_SERVICE_URL: http://roadfx-platform:8003
+      AI_SERVICE_URL: http://roadfx-ai:8081
+      RAG_SERVICE_URL: http://roadfx-rag:8082
+      PLUGIN_RUNTIME_URL: http://roadfx-plugin-runtime:8090
+      DEVICE_CONTROL_SERVICE_URL: http://roadfx-device-control:8085
+      WORKFLOW_SERVICE_URL: http://roadfx-workflow:8000
+      WUKONGIM_SERVICE_URL: http://wukongim:5001
+    working_dir: /workspace
+    volumes:
+      - ./repos/roadfx-api:/workspace
+    command:
+      - /app/.venv/bin/alembic
+      - upgrade
+      - head
+
+  migrate-ai:
+    image: ghcr.io/ivansslo/roadfx/roadfx-ai:latest
+    env_file:
+      - .env.dev
+    environment:
+      <<: *backend-env
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-roadfx}:${POSTGRES_PASSWORD:-roadfx}@postgres:5432/${POSTGRES_DB:-roadfx}
+      REDIS_URL: redis://redis:6379/1
+      API_SERVICE_URL: http://roadfx-api:8000
+      API_INTERNAL_SERVICE_URL: http://roadfx-api:8001
+      RAG_SERVICE_URL: http://roadfx-rag:8082
+      WORKFLOW_SERVICE_URL: http://roadfx-workflow:8000
+      PLUGIN_RUNTIME_URL: http://roadfx-plugin-runtime:8090
+      DEVICE_CONTROL_SERVICE_URL: http://roadfx-device-control:8085
+    working_dir: /workspace
+    volumes:
+      - ./repos/roadfx-ai:/workspace
+    command:
+      - /app/.venv/bin/alembic
+      - upgrade
+      - head
+
+  migrate-rag:
+    image: ghcr.io/ivansslo/roadfx/roadfx-rag:latest
+    env_file:
+      - .env.dev
+    environment:
+      <<: *backend-env
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-roadfx}:${POSTGRES_PASSWORD:-roadfx}@postgres:5432/${POSTGRES_DB:-roadfx}
+      REDIS_URL: redis://redis:6379/2
+    working_dir: /workspace
+    volumes:
+      - ./repos/roadfx-rag:/workspace
+      - ./data/roadfx-rag/uploads:/workspace/uploads
+    command:
+      - /app/.venv/bin/alembic
+      - upgrade
+      - head
+
+  migrate-platform:
+    image: ghcr.io/ivansslo/roadfx/roadfx-platform:latest
+    env_file:
+      - .env.dev
+    environment:
+      <<: *backend-env
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-roadfx}:${POSTGRES_PASSWORD:-roadfx}@postgres:5432/${POSTGRES_DB:-roadfx}
+      REDIS_URL: redis://redis:6379/0
+      API_BASE_URL: http://roadfx-api:8000
+    working_dir: /workspace
+    volumes:
+      - ./repos/roadfx-platform:/workspace
+    command:
+      - /app/.venv/bin/alembic
+      - upgrade
+      - head
+
+  migrate-workflow:
+    image: ghcr.io/ivansslo/roadfx/roadfx-workflow:latest
+    env_file:
+      - .env.dev
+    environment:
+      <<: *backend-env
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-roadfx}:${POSTGRES_PASSWORD:-roadfx}@postgres:5432/${POSTGRES_DB:-roadfx}
+      REDIS_URL: redis://redis:6379/2
+      AI_SERVICE_URL: http://roadfx-ai:8081
+    working_dir: /workspace
+    volumes:
+      - ./repos/roadfx-workflow:/workspace
+    command:
+      - /app/.venv/bin/alembic
+      - upgrade
+      - head
+
+  migrate-plugin:
+    image: ghcr.io/ivansslo/roadfx/roadfx-plugin-runtime:latest
+    env_file:
+      - .env.dev
+    environment:
+      <<: *backend-env
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-roadfx}:${POSTGRES_PASSWORD:-roadfx}@postgres:5432/${POSTGRES_DB:-roadfx}
+      AI_SERVICE_URL: http://roadfx-ai:8081
+    working_dir: /workspace
+    volumes:
+      - ./repos/roadfx-plugin-runtime:/workspace
+      - ./data/plugins:/var/lib/roadfx/plugins
+      - plugin-socket:/var/run/roadfx
+    command:
+      - /app/.venv/bin/alembic
+      - upgrade
+      - head
+
+  migrate-device:
+    image: ghcr.io/ivansslo/roadfx/roadfx-device-control:latest
+    env_file:
+      - .env.dev
+    environment:
+      <<: *backend-env
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-roadfx}:${POSTGRES_PASSWORD:-roadfx}@postgres:5432/${POSTGRES_DB:-roadfx}
+      REDIS_URL: redis://redis:6379/3
+      AI_SERVICE_URL: http://roadfx-ai:8081
+      API_SERVICE_URL: http://roadfx-api:8000
+    working_dir: /workspace
+    volumes:
+      - ./repos/roadfx-device-control:/workspace
+      - ./data/roadfx-device-control/screenshots:/var/lib/roadfx/device-control/screenshots
+    command:
+      - /app/.venv/bin/alembic
+      - upgrade
+      - head

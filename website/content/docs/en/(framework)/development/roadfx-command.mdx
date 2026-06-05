@@ -1,0 +1,279 @@
+---
+id: roadfx-command
+title: roadfx Command
+description: roadfx.sh command usage.
+---
+
+`roadfx.sh` is the main management script for ROADFX providing all common commands for deployment, maintenance, and configuration.
+
+## Command Overview
+
+```bash
+./roadfx.sh <command> [options]
+```
+
+## Basic Commands
+
+### help
+
+Display help information:
+
+```bash
+./roadfx.sh help
+```
+
+### install
+
+First-time installation and startup of all services:
+
+```bash
+./roadfx.sh install [--source] [--cn]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--source` | Build from source (instead of using pre-built images) |
+| `--cn` | Use domestic mirror acceleration |
+
+Example:
+
+```bash
+# Default installation (using pre-built images)
+./roadfx.sh install
+
+# Source installation
+./roadfx.sh install --source
+
+# Domestic mirror installation
+./roadfx.sh install --cn
+
+# Combination use
+./roadfx.sh install --source --cn
+```
+
+### up
+
+Start all services (without initialization):
+
+```bash
+./roadfx.sh up [--source] [--cn]
+```
+
+Appropriate for restarting services after `down`.
+
+### down
+
+Stop and remove all containers:
+
+```bash
+./roadfx.sh down [--volumes]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--volumes` | Delete data volumes (**data will be lost**) |
+
+### upgrade
+
+Upgrade to the latest version:
+
+```bash
+./roadfx.sh upgrade [--source] [--cn]
+```
+
+Will remember the installation mode used initially. For example:
+
+```bash
+# First installation using domestic mirror
+./roadfx.sh install --cn
+
+# Later upgrades will automatically use --cn
+./roadfx.sh upgrade
+Will automatically remember the installation mode used initially. For example:
+
+```bash
+# First installation using domestic mirror
+./roadfx.sh install --cn
+
+# Later upgrades will automatically use --cn
+./roadfx.sh upgrade
+```
+
+The configuration is saved in the `./data/.roadfx-install-mode` file.
+
+### uninstall
+
+Uninstall ROADFX
+
+```bash
+./roadfx.sh uninstall [--source] [--cn]
+```
+
+Will ask for confirmation to delete data.
+
+### doctor
+
+Check the health status of all services:
+
+```bash
+./roadfx.sh doctor
+```
+
+Output includes:
+
+- Service run status
+- Configuration check
+- Endpoint response tests
+
+## Service Management Commands
+
+### service
+
+Manage core services:
+
+```bash
+./roadfx.sh service <start|stop|remove> [--source] [--cn]
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `start` | Start service |
+| `stop` | Stop service |
+| `remove` | Remove service |
+
+### tools
+
+Manage debugging tools (Kafka UI, Adminer):
+
+```bash
+./roadfx.sh tools <start|stop>
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `start` | Start debugging tools |
+| `stop` | Stop debugging tools |
+
+### build
+
+Build specific services from source:
+
+```bash
+./roadfx.sh build <service>
+```
+
+| Service | Description |
+|---------|-------------|
+| `api` | Build roadfx-api |
+| `ai` | Build roadfx-ai |
+| `rag` | Build roadfx-rag |
+| `platform` | Build roadfx-platform |
+| `web` | Build roadfx-web |
+| `widget` | Build roadfx-widget |
+| `all` | Build all services |
+
+## Configuration Commands
+
+### config
+
+Domain and SSL certificate configuration:
+
+```bash
+./roadfx.sh config <subcommand> [args]
+```
+
+#### Domain Configuration
+
+```bash
+./roadfx.sh config web_domain <domain>      # Set Web domain
+./roadfx.sh config widget_domain <domain>   # Set Widget domain
+./roadfx.sh config api_domain <domain>      # Set API domain
+./roadfx.sh config ws_domain <domain>       # Set WebSocket domain
+```
+
+#### SSL Configuration
+
+```bash
+./roadfx.sh config ssl_mode <auto|manual|none>   # Set SSL mode
+./roadfx.sh config ssl_email <email>              # Set Let's Encrypt email
+./roadfx.sh config ssl_manual <cert> <key> [domain]  # Install manual certificate
+./roadfx.sh config setup_letsencrypt              # Apply Let's Encrypt certificate
+```
+
+#### Other Configuration Commands
+
+```bash
+./roadfx.sh config apply   # Apply configuration (regenerate Nginx config)
+./roadfx.sh config show    # Show current configuration
+```
+
+## Complete Configuration Example
+
+### Domain and HTTPS Configuration
+
+```bash
+# Configure domains
+./roadfx.sh config web_domain www.example.com
+./roadfx.sh config widget_domain widget.example.com
+./roadfx.sh config api_domain api.example.com
+
+# Configure SSL
+./roadfx.sh config ssl_email admin@example.com
+./roadfx.sh config setup_letsencrypt
+
+# Apply configuration
+./roadfx.sh config apply
+
+# Show current configuration
+./roadfx.sh config show
+```
+
+## Command Options
+
+| Option | Description |
+|--------|-------------|
+| `--source` | Build from source (instead of using pre-built images) |
+| `--cn` | Use domestic mirror acceleration |
+| `--volumes` | Include data volume operations |
+
+## Environment Variables
+
+The one-click installation script supports the following environment variables:
+
+| Variable | Description | Default Value |
+|----------|-------------|---------------|
+| `REF` | Deployment version (branch/Tag/commit) | `latest` |
+| `DIR` | Installation directory | `./roadfx` |
+
+Example:
+
+```bash
+REF=v1.0.0 DIR=/opt/roadfx curl -fsSL https://raw.githubusercontent.com/ivansslo/roadfx/main/bootstrap.sh | bash
+```
+
+## Configuration Files
+
+| File | Description |
+|------|-------------|
+| `.env` | Global environment variables |
+| `envs/*.env` | Service-specific environment variables |
+| `data/.roadfx-install-mode` | Installation mode memory |
+| `data/.roadfx-domain-config` | Domain and SSL configuration |
+
+## Data Directories
+
+| Directory | Description |
+|-----------|-------------|
+| `data/postgres/` | PostgreSQL data |
+| `data/redis/` | Redis data |
+| `data/wukongim/` | WuKongIM data |
+| `data/nginx/` | Nginx configuration and certificates |
+| `data/uploads/` | Uploaded files |
+
+## Suggestions
+
+1. **Production Environment**：Deploy using default images with `./roadfx.sh install`
+2. **Development Environment**：Deploy from source with `./roadfx.sh install --source`
+3. **Domestic Servers**：Add `--cn` parameter for acceleration
+4. **Troubleshooting**：First run `./roadfx.sh doctor` to check status
+5. **Upgrade**：Use `./roadfx.sh upgrade` to update to the latest version

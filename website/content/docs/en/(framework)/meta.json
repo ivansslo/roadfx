@@ -1,0 +1,17 @@
+{
+  "title": "ROADFX Document",
+  "description": "ROADFX System Document Center.",
+  "root": true,
+  "icon": "Book",
+  "pages": [
+    "---Guide---",
+    "index",
+    "wechat-group",
+    "quick-start",
+    "---Configuration---",
+    "config",
+    "---Development---",
+    "development",
+    "plugin"
+  ]
+}

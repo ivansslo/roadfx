@@ -1,0 +1,7 @@
+{
+  "usingComponents": {
+    "roadfx-chat": "roadfx-widget-miniprogram/chat/index"
+  },
+  "navigationBarTitleText": "在线客服",
+  "navigationStyle": "custom"
+}
