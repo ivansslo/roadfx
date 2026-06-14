@@ -104,7 +104,7 @@ const ToolStoreDetail: React.FC<ToolStoreDetailProps> = ({
                 )}
               </div>
               <p className="text-gray-500 dark:text-gray-400 font-medium text-lg mt-1">
-                {tool.author || 'ROADFX} <span className="text-gray-300 dark:text-gray-600 mx-2">@</span>{tool.authorHandle || 'roadfx'}
+                {tool.author || 'ROADFX'} <span className="text-gray-300 dark:text-gray-600 mx-2">@</span>{tool.authorHandle || 'roadfx'}
               </p>
             </div>
 
