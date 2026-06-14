@@ -49,7 +49,7 @@ jobs:
             json="["
             first=1
             for s in $(echo "$services_input" | tr ',' '\n'); do
-              s=$(echo "$s" | xargs)  # Remove leading/trailing whitespace
+              s=$(echo "$s" | xargs)
               if [ -z "$s" ]; then continue; fi
               if [ $first -eq 0 ]; then
                 json="$json,"
@@ -64,7 +64,7 @@ jobs:
             exit 0
           fi
 
-          # Priority 2: Tag prefix (e.g., roadfx-api-v1.0.0)
+          # Priority 2: Tag prefix
           tag="${{ github.ref_name }}"
           if [[ $tag =~ ^(roadfx-[a-z-]+)-v ]]; then
             service="${BASH_REMATCH[1]}"
@@ -88,14 +88,11 @@ jobs:
             name="${dir#repos/}"
             name="${name%/}"
 
-            # Skip roadfx-rag during auto-discovery as it takes too long to build.
-            # You can still build it manually via workflow_dispatch or specific tags (e.g., roadfx-rag-v1.0.0).
             if [ "$name" == "roadfx-rag" ]; then
               echo "− Skipping roadfx-rag (auto-discovery excluded)"
               continue
             fi
 
-            # Ensure the service has a Dockerfile
             if [ -f "repos/$name/Dockerfile" ]; then
               services+=("$name")
             fi
@@ -150,11 +147,8 @@ jobs:
           REF_NAME="${{ github.ref_name }}"
           EVENT_NAME="${{ github.event_name }}"
           
-          # Determine if we should skip 'latest' tag
-          # Skip for: workflow_dispatch (manual) unless push_latest is true, or -dev suffix tags
           PUSH_LATEST_INPUT="${{ github.event.inputs.push_latest }}"
           if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
-            # Manual trigger: use branch name as tag
             echo "BUILD_TYPE=manual" >> $GITHUB_ENV
             if [ "$PUSH_LATEST_INPUT" == "true" ]; then
               echo "IS_DEV_BUILD=false" >> $GITHUB_ENV
@@ -164,18 +158,15 @@ jobs:
               echo "🔧 Manual build from branch: $REF_NAME (will not update 'latest' tag)"
             fi
           elif [[ "$REF_NAME" == *-dev ]]; then
-            # Dev tag: skip 'latest'
             echo "IS_DEV_BUILD=true" >> $GITHUB_ENV
             echo "BUILD_TYPE=dev" >> $GITHUB_ENV
             echo "⚠️ Dev build detected: $REF_NAME (will not update 'latest' tag)"
           else
-            # Release tag: update 'latest'
             echo "IS_DEV_BUILD=false" >> $GITHUB_ENV
             echo "BUILD_TYPE=release" >> $GITHUB_ENV
             echo "✓ Release build: $REF_NAME (will update 'latest' tag)"
           fi
           
-          # Sanitize branch name for use as Docker tag (replace / with -)
           SANITIZED_TAG=$(echo "$REF_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')
           echo "IMAGE_VERSION=$SANITIZED_TAG" >> $GITHUB_ENV
           echo "📦 Image version tag: $SANITIZED_TAG"
@@ -185,23 +176,16 @@ jobs:
         run: |
           echo "Disk space before cleanup:"
           df -h
-
-          # Remove unnecessary pre-installed software
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo rm -rf /usr/local/share/boost
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-
-          # Clean up apt cache
           sudo apt-get clean
           sudo apt-get autoremove -y
           sudo apt-get autoclean -y
-
-          # Clean up Docker system
           docker system prune -af --volumes
-
           echo "Disk space after cleanup:"
           df -h
 
@@ -228,13 +212,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Log in to Alibaba Cloud Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: registry.cn-shanghai.aliyuncs.com
-          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
-          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
-
       - name: Generate image tags
         id: tags
         run: |
@@ -244,20 +221,15 @@ jobs:
           echo "=== Tag Generation ==="
           echo "Service: $SERVICE"
           echo "Version: $VERSION"
-          echo "Build type: ${{ env.BUILD_TYPE }}"
           echo ""
           
-          # Base tags (always included)
           TAGS="ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/${SERVICE}:${VERSION}"
           TAGS="${TAGS},ivansslo/${SERVICE}:${VERSION}"
-          TAGS="${TAGS},registry.cn-shanghai.aliyuncs.com/ivansslo/${SERVICE}:${VERSION}"
           
-          # Add 'latest' tags only for release builds (not dev or manual)
           if [ "${{ env.IS_DEV_BUILD }}" != "true" ]; then
             echo "✓ Adding 'latest' tags (release build)"
             TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/${SERVICE}:latest"
             TAGS="${TAGS},ivansslo/${SERVICE}:latest"
-            TAGS="${TAGS},registry.cn-shanghai.aliyuncs.com/ivansslo/${SERVICE}:latest"
           else
             echo "⚠️ Skipping 'latest' tags (${{ env.BUILD_TYPE }} build)"
           fi
@@ -295,13 +267,11 @@ jobs:
         run: |
           echo "Verifying multi-architecture manifest for ${{ matrix.service }}..."
           
-          # Use version tag for verification (always exists)
           IMAGE_TAG="ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ matrix.service }}:${{ env.IMAGE_VERSION }}"
           
           echo "Inspecting: $IMAGE_TAG"
           docker buildx imagetools inspect "$IMAGE_TAG"
 
-          # Verify both architectures are present
           if docker buildx imagetools inspect "$IMAGE_TAG" | grep -q "linux/amd64"; then
             echo "✓ AMD64 architecture found"
           else
@@ -319,24 +289,3 @@ jobs:
           echo ""
           echo "=== Build Summary ==="
           echo "Multi-architecture build verified successfully!"
-          
-          case "${{ env.BUILD_TYPE }}" in
-            manual)
-              echo "🔧 Manual build from branch '${{ github.ref_name }}'"
-              echo "📦 Image tag: ${{ env.IMAGE_VERSION }}"
-              if [ "${{ env.IS_DEV_BUILD }}" == "false" ]; then
-                echo "✓ 'latest' tag was updated per manual request"
-              else
-                echo "⚠️ 'latest' tag was NOT updated"
-              fi
-              ;;
-            dev)
-              echo "🧪 Dev build: ${{ env.IMAGE_VERSION }}"
-              echo "⚠️ 'latest' tag was NOT updated"
-              ;;
-            release)
-              echo "🚀 Release build: ${{ env.IMAGE_VERSION }}"
-              echo "✓ 'latest' tag was updated"
-              ;;
-          esac
-
