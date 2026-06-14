@@ -79,7 +79,7 @@ export class StoreItemToAiToolTransformer extends BaseTransformerClass<ToolStore
       category: TransformUtils.transformCategory(storeItem.categories?.[0]?.slug || storeItem.category || null),
       status: TransformUtils.transformToolStatus(status as any),
       version: storeItem.version || '1.0.0',
-      author: storeItem.author || 'ROADFX,
+      author: storeItem.author || 'ROADFX',
       lastUpdated: storeItem.lastUpdated || '',
       usageCount: storeItem.downloads || 0,
       rating: storeItem.rating || 0,
