@@ -45,7 +45,7 @@ const ToolStoreCard: React.FC<ToolStoreCardProps> = ({ tool, onClick, onInstall,
             )}
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 font-medium flex items-center justify-between">
-            <span>{tool.author || 'ROADFX}</span>
+            <span>{tool.author || 'ROADFX'}</span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider ${
               (tool.price_per_call || 0) > 0 
                 ? 'bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400' 
