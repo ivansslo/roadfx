@@ -116,7 +116,7 @@
     },
     "plugins": {
       "title": "Plugins",
-      "subtitle": "View and manage plugins connected to ROADFX,
+      "subtitle": "View and manage plugins connected to ROADFX",
       "empty": {
         "title": "No plugins connected",
         "description": "Plugins can connect to ROADFX API via Unix Socket or TCP."
